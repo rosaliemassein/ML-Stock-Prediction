@@ -1,0 +1,38 @@
+# configs/default.yaml
+seed: 1337
+universe:
+  tickers: ["AAPL", "TSLA", "MSFT", "SPY", "NVDA", "GOOG", "AMZN", "META", "NFLX", "AMD"]
+  start: "2018-01-01"
+  end: "2025-11-06"
+  use_adjusted_close: true
+
+labels:
+  horizon_days: 1   # next-day return sign
+  threshold: 0.0
+technical:
+  windows: [5, 10, 20]
+  rsi_window: 14
+  vol_window: 20
+sentiment:
+  provider: "finbert"        # placeholder; inference via transformers
+  daily_agg: "mean"          # mean, median, weighted_mean
+  weight_by_significance: false
+  significance_model: "gpt-4o"   # optional, if used
+cv:
+  n_splits: 5
+  test_size_days: 60
+  gap_days: 5
+models:
+  logistic:
+    C: 1.0
+  linear_svm:
+    C: 1.0
+  random_forest:
+    n_estimators: 300
+    max_depth: null
+  xgboost:
+    n_estimators: 600
+    max_depth: 4
+    subsample: 0.8
+    colsample_bytree: 0.8
+   
