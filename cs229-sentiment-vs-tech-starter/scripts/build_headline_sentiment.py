@@ -41,45 +41,25 @@ def encode_batch_score(texts, pipe):
     # returns (sent_score,) where score ~ pos - neg using FinBERT label mapping
     out = []
     for t in texts:
-        if _HAS_TRANSFORMERS:
-            res = pipe(t[:512])[0]  # list of dicts
-            # FinBERT labels: ['positive','negative','neutral'] or similar
-            d = {r['label'].lower(): r['score'] for r in res}
-            pos = d.get('positive', 0.0)
-            neg = d.get('negative', 0.0)
-            out.append(pos - neg)
-        else:
-            out.append(naive_lexicon_score(t))
+        res = pipe(t[:512])[0]  # list of dicts
+        # FinBERT labels: ['positive','negative','neutral'] or similar
+        d = {r['label'].lower(): r['score'] for r in res}
+        pos = d.get('positive', 0.0)
+        neg = d.get('negative', 0.0)
+        out.append(pos - neg)
     return np.array(out, dtype=float)
 
 def encode_batch_triplet(texts, pipe):
     P = []
     for t in texts:
-        if _HAS_TRANSFORMERS:
-            res = pipe(t[:512])[0]
-            d = {r['label'].lower(): r['score'] for r in res}
-            P.append([d.get('positive', 0.0), d.get('neutral', 0.0), d.get('negative', 0.0)])
-        else:
-            s = naive_lexicon_score(t)
-            # simple mapping into a distribution
-            pos = max(0.0, 0.5 + 0.5*s)
-            neg = max(0.0, 0.5 - 0.5*s)
-            neu = max(0.0, 1.0 - (pos+neg))
-            Z = pos + neu + neg + 1e-12
-            P.append([pos/Z, neu/Z, neg/Z])
+        res = pipe(t[:512])[0]
+        d = {r['label'].lower(): r['score'] for r in res}
+        P.append([d.get('positive', 0.0), d.get('neutral', 0.0), d.get('negative', 0.0)])
     return np.array(P, dtype=float)
 
 def encode_batch_embed(texts, tok, mdl, device=None):
     embs = []
     for t in texts:
-        if not _HAS_EMBED:
-            # fallback tiny bag-of-words-ish numeric hash to 32-d
-            v = np.zeros(32, dtype=float)
-            for w in re.findall(r"\w+", t.lower()):
-                v[hash(w) % 32] += 1.0
-            v = v / (np.linalg.norm(v) + 1e-12)
-            embs.append(v)
-            continue
         with torch.no_grad():
             enc = tok(t[:512], return_tensors="pt", truncation=True)
             outputs = mdl(**enc)
@@ -106,7 +86,7 @@ def main():
         df = df[df["text"].astype(str).str.contains(EVENT_RE, na=False)]
         print(f"[info] events_only: {len(df)} rows after filter")
 
-    if args.encoder in ("score","triplet") and _HAS_TRANSFORMERS:
+    if args.encoder in ("score","triplet"):
         pipe = load_finbert_score_pipeline()
     else:
         pipe = None
