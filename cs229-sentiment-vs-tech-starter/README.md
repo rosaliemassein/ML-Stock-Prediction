@@ -18,27 +18,25 @@ This repo tests whether **FinBERT-based sentiment** adds predictive power beyond
 
 ## Quickstart
 ```bash
-# 0) Create environment
-python -m venv .venv && source .venv/bin/activate   # (Windows: .venv\Scripts\activate)
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+# 0) Create environment with uv
+uv sync  # Creates .venv and installs dependencies from pyproject.toml
 
 # 1) Set config (tickers, dates) in configs/default.yaml
 
 # 2) Fetch OHLCV & headlines (requires internet access & API keys where relevant)
-python scripts/fetch_ohlcv.py --config configs/default.yaml
-python scripts/fetch_headlines.py --config configs/default.yaml
+uv run python scripts/fetch_ohlcv.py --config configs/default.yaml
+uv run python scripts/fetch_headlines.py --config configs/default.yaml
 
 # 3) Build features
-python scripts/build_technical_features.py --config configs/default.yaml
-python scripts/build_sentiment_features.py --config configs/default.yaml
+uv run python scripts/build_technical_features.py --config configs/default.yaml
+uv run python scripts/build_sentiment_features.py --config configs/default.yaml
 
 # 4) Train & evaluate
-python scripts/train_baselines.py --config configs/default.yaml
-python scripts/train_ensembles.py --config configs/default.yaml
+uv run python scripts/train_baselines.py --config configs/default.yaml
+uv run python scripts/train_ensembles.py --config configs/default.yaml
 
 # 5) Analysis
-python scripts/run_ablation.py --config configs/default.yaml
+uv run python scripts/run_ablation.py --config configs/default.yaml
 ```
 
 ## Repo layout

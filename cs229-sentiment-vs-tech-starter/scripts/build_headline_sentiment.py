@@ -5,24 +5,12 @@ import pandas as pd
 import numpy as np
 
 # Optional ML deps
-try:
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
-    _HAS_TRANSFORMERS = True
-except Exception:
-    _HAS_TRANSFORMERS = False
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
 
-try:
-    from transformers import AutoModel, AutoTokenizer as AutoTok2
-    import torch
-    _HAS_EMBED = True
-except Exception:
-    _HAS_EMBED = False
+from transformers import AutoModel, AutoTokenizer as AutoTok2
+import torch
 
-try:
-    from sklearn.decomposition import PCA
-    _HAS_SKLEARN = True
-except Exception:
-    _HAS_SKLEARN = False
+from sklearn.decomposition import PCA
 
 
 EVENT_RE = re.compile(r"(earnings|guidance|merger|acquisition|M&A|SEC|lawsuit|layoff|dividend|split|downgrade|upgrade|regulator|antitrust)", re.I)
@@ -124,10 +112,7 @@ def main():
         pipe = None
 
     if args.encoder == "embed_pca16":
-        if _HAS_EMBED:
-            tok, mdl = load_bert_embedder()  # or FinBERT if you prefer
-        else:
-            tok = mdl = None
+        tok, mdl = load_bert_embedder()  # or FinBERT if you prefer
 
     # Encode per headline
     texts = df["text"].astype(str).tolist()
@@ -141,15 +126,16 @@ def main():
     else:  # embed_pca16
         E = encode_batch_embed(texts, tok, mdl)
         # PCA to pca_dim
-        if _HAS_SKLEARN:
-            pca = PCA(n_components=args.pca_dim, random_state=0)
-            Z = pca.fit_transform(E)
-        else:
-            # fallback to first pca_dim dims (already high-d)
-            keep = min(args.pca_dim, E.shape[1])
-            Z = E[:, :keep]
-            if keep < args.pca_dim:
-                Z = np.pad(Z, ((0,0),(0,args.pca_dim-keep)))
+        # Adjust n_components if we have too few samples
+        max_components = min(E.shape[0], E.shape[1])
+        n_comp = min(args.pca_dim, max_components)
+        if n_comp < args.pca_dim:
+            print(f"[warning] Only {E.shape[0]} samples available, reducing PCA from {args.pca_dim} to {n_comp} components")
+        pca = PCA(n_components=n_comp, random_state=0)
+        Z = pca.fit_transform(E)
+        # Pad with zeros if needed
+        if Z.shape[1] < args.pca_dim:
+            Z = np.pad(Z, ((0,0),(0,args.pca_dim-Z.shape[1])))
         for j in range(args.pca_dim):
             df[f"emb_{j+1}"] = Z[:,j]
 
