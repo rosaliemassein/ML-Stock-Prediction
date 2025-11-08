@@ -1,0 +1,14 @@
+transformers>=4.45
+safetensors>=0.4
+accelerate
+sentencepiece
+numpy>=2.0
+
+# macOS Intel (x86_64) → wheel dispo pour cette version
+torch==2.1.2; sys_platform == "darwin" and platform_machine == "x86_64"
+
+# Linux → torch récent OK
+torch>=2.6; sys_platform != "darwin"
+
+# macOS ARM (Apple Silicon) → torch récent OK
+torch>=2.6; sys_platform == "darwin" and platform_machine != "x86_64"
