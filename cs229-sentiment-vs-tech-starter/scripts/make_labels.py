@@ -33,7 +33,7 @@ def main():
     out_df = (out_df
               .sort_values(["ticker","date"])
               .groupby("ticker", group_keys=False)
-              .apply(lambda g: g.iloc[:-args.horizon_days] if len(g) > args.horizon_days else g.dropna(subset=[label_col]))
+              .apply(lambda g: g.iloc[:-args.horizon_days] if len(g) > args.horizon_days else g.dropna(subset=[label_col]), include_groups=False)
              )
 
     # pick output path

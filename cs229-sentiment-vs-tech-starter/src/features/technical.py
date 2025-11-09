@@ -4,10 +4,10 @@ import numpy as np
 def compute_technical_features(df, windows=(5,10,20), rsi_window=14, vol_window=20):
     # df has columns: date, close, open, high, low, volume
     out = df.copy()
-    out['ret_1d'] = out['close'].pct_change()
+    out['ret_1d'] = out['close'].pct_change(fill_method=None)
     for w in windows:
         out[f'sma_{w}'] = out['close'].rolling(w).mean()
-        out[f'mom_{w}'] = out['close'].pct_change(w)
+        out[f'mom_{w}'] = out['close'].pct_change(w, fill_method=None)
     # volatility
     out[f'vol_{vol_window}'] = out['ret_1d'].rolling(vol_window).std() * np.sqrt(252)
     # RSI
