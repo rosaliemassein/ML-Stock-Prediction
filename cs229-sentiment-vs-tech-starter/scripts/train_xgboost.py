@@ -480,41 +480,29 @@ def main():
     triplet = triplet[triplet['date'].isin(sentiment_dates)]
     embed = embed[embed['date'].isin(sentiment_dates)]
 
-    # Expanded technical features - automatically detect all available technical indicators
-    base_features = ["ret_1d", "rsi"]
-    
-    ma_features = [c for c in tech.columns if c.startswith(('sma_', 'ema_', 'mom_', 'price_to_sma_', 'price_to_ema_'))]
-    
-    # Volatility features (exclude volume-related features that start with vol_)
-    vol_features = [c for c in tech.columns if c.startswith(('atr_', 'bb_')) or (c.startswith('vol_') and not c.startswith('vol_sma') and not c == 'vol_ratio')]
-    
-    momentum_features = [c for c in tech.columns if c.startswith(('stoch_', 'willr_', 'roc_', 'cci_', 'macd'))]
-    
-    trend_features = [c for c in tech.columns if c.startswith('adx_')]
-    
-    volume_features = [c for c in tech.columns if c.startswith(('vol_sma_', 'obv', 'vwap_', 'price_to_vwap')) or c == 'vol_ratio']
-    
-    pattern_features = [c for c in tech.columns if c in ['high_low_range', 'close_position', 'upper_shadow', 'lower_shadow', 'body_size', 'body_size_ratio']]
-    
-    # Combine all technical features and remove duplicates
-    tech_features = base_features + ma_features + vol_features + momentum_features + trend_features + volume_features + pattern_features
-    
-    # Remove duplicates while preserving order
-    seen = set()
-    tech_features = [x for x in tech_features if not (x in seen or seen.add(x))]
+    # REDUCED technical features - minimal set to avoid overfitting with limited data
+    # Using only the most important, non-redundant indicators
+    tech_features = [
+        'ret_1d',
+        'rsi',
+        'sma_20',
+        'price_to_sma_20',
+        'mom_20',
+        'vol_20',
+        'bb_width_20',
+        'bb_pct_20',
+        'macd',
+        'macd_signal',
+        'vol_ratio',
+        'close_position',
+    ]
     
     # Filter to only include features that actually exist in the dataframe
     tech_features = [f for f in tech_features if f in tech.columns]
     
     print(f"\n{'='*70}")
-    print(f"Using {len(tech_features)} technical features:")
-    print(f"  - Basic: {len(base_features)}")
-    print(f"  - Moving Averages: {len(ma_features)}")
-    print(f"  - Volatility: {len(vol_features)}")
-    print(f"  - Momentum: {len(momentum_features)}")
-    print(f"  - Trend: {len(trend_features)}")
-    print(f"  - Volume: {len(volume_features)}")
-    print(f"  - Price Patterns: {len(pattern_features)}")
+    print(f"Using {len(tech_features)} technical features (REDUCED SET):")
+    print(f"  Features: {', '.join(tech_features)}")
     print(f"{'='*70}\n")
 
     print(f"\n{'='*70}")
