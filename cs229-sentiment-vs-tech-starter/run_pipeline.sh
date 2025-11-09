@@ -91,19 +91,19 @@ uv run scripts/merge_T_plus_news_simple.py \
   --news data/processed/news_features_simple.csv \
   --out data/processed/merge_T_plus_news_simple_h5.csv
 
-echo ""
-echo "=== Step 11: Train XGBoost, LightGBM, and Random Forest models ==="
-uv run scripts/train_xgboost.py \
-  --model all \
-  --split chrono \
-  --tune \
+# echo ""
+# echo "=== Step 11: Train XGBoost, LightGBM, and Random Forest models ==="
+# uv run scripts/train_xgboost.py \
+#   --model all \
+#   --split chrono \
+#   --tune \
 
-echo ""
-echo "=== Step 11.5: Train models with top-K features (10, 20, 30, 50) ==="
-uv run scripts/train_top_features.py \
-  --split chrono \
-  --top-k 10,20,30,50 \
-  --tune \
+# echo ""
+# echo "=== Step 11.5: Train models with top-K features (10, 20, 30, 50) ==="
+# uv run scripts/train_top_features.py \
+#   --split chrono \
+#   --top-k 10,20,30,50 \
+#   --tune \
 
 
 echo ""
