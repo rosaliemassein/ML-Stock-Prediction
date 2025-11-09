@@ -1,8 +1,8 @@
 # configs/default.yaml
 seed: 1337
 universe:
-  tickers: ["AAPL", "TSLA", "MSFT", "SPY", "NVDA", "GOOG", "AMZN", "META", "NFLX", "AMD"]
-  start: "2018-01-01"
+  tickers: ["AAPL", "MSFT", "SPY", "NVDA", "GOOG", "AMZN", "META", "NFLX", "AMD"]  # Removed TSLA due to sparse news coverage
+  start: "2025-08-12"
   end: "2025-11-06"
   use_adjusted_close: true
 

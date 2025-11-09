@@ -26,19 +26,14 @@ uv run scripts/make_labels.py \
 
 echo ""
 echo "=== Step 4: Fetch headlines ==="
-START="2025-08-06"
-END="2025-11-04"
-TICKS="AAPL,TSLA,MSFT,SPY,NVDA,GOOG,AMZN,META,NFLX,AMD"
 OUT="data/raw/news/headlines.csv"
 
 uv run scripts/fetch_headlines.py \
   --config configs/default.yaml \
-  --start $START --end $END \
-  --tickers $TICKS \
   --out $OUT
 
 echo ""
-echo "=== Step 5: Build FinBERT sentiment features ==="
+echo "=== Step 5: Build headline sentiment features ==="
 # Ensure output dir exists
 mkdir -p data/processed
 
@@ -50,20 +45,38 @@ unset HUGGINGFACE_HUB_HEADERS
 export HF_HUB_DISABLE_TELEMETRY=1
 export TOKENIZERS_PARALLELISM=false
 
-uv run scripts/build_sentiment_finbert.py \
+# Build sentiment score (p_pos - p_neg)
+uv run scripts/build_headline_sentiment.py \
   --input data/raw/news/headlines.csv \
-  --out_triplet data/processed/sent_headlines_triplet.csv \
-  --out_score data/processed/sent_headlines_score.csv
+  --encoder score \
+  --out data/processed/sent_headlines_score.csv
 
 echo ""
-echo "=== Step 6: Build headline sentiment embeddings (PCA16) ==="
+echo "=== Step 6: Build sentiment triplet features ==="
+uv run scripts/build_headline_sentiment.py \
+  --input data/raw/news/headlines.csv \
+  --encoder triplet \
+  --out data/processed/sent_headlines_triplet.csv
+
+echo ""
+echo "=== Step 7: Build sentiment embedding features ==="
 uv run scripts/build_headline_sentiment.py \
   --input data/raw/news/headlines.csv \
   --encoder embed_pca16 \
   --out data/processed/sent_headlines_embed_pca16.csv
 
 echo ""
-echo "=== Step 7: Build news features with decay and event weights ==="
+echo "=== Step 8: Build enhanced sentiment features (MA, volatility, momentum) ==="
+uv run scripts/build_sentiment_features.py \
+  --headlines data/raw/news/headlines.csv \
+  --sent_score data/processed/sent_headlines_score.csv \
+  --sent_triplet data/processed/sent_headlines_triplet.csv \
+  --out data/processed/sentiment_features_enhanced.csv \
+  --windows 3,5,10 \
+  --vol_window 10
+
+echo ""
+echo "=== Step 9: Build news features with decay and event weights ==="
 uv run scripts/build_news_simple.py \
   --headlines data/raw/news/headlines.csv \
   --sent_score data/processed/sent_headlines_score.csv \
@@ -72,24 +85,27 @@ uv run scripts/build_news_simple.py \
   --out data/processed/news_features_simple.csv
 
 echo ""
-echo "=== Step 8: Merge technical + news features ==="
+echo "=== Step 10: Merge technical + news features ==="
 uv run scripts/merge_T_plus_news_simple.py \
   --tech data/processed/merge_T_only_h5.csv \
   --news data/processed/news_features_simple.csv \
   --out data/processed/merge_T_plus_news_simple_h5.csv
 
 echo ""
-echo "=== Step 9: Train logistic regression (random split) ==="
-uv run scripts/train_logreg.py
+echo "=== Step 11: Train XGBoost, LightGBM, and Random Forest models ==="
+uv run scripts/train_xgboost.py \
+  --model all \
+  --split chrono \
+  --tune \
 
 echo ""
-echo "=== Step 10: Train logistic regression (chronological split) ==="
-uv run scripts/train_logreg.py --split chrono
+echo "=== Step 11.5: Train models with top-K features (10, 20, 30, 50) ==="
+uv run scripts/train_top_features.py \
+  --split chrono \
+  --top-k 10,20,30,50 \
+  --tune \
+
 
 echo ""
-echo "=== Step 11: Train logistic regression with decay + event weights ==="
-python scripts/train_logreg_simple.py --csv data/processed/merge_T_plus_news_simple_h5.csv
-
-echo ""
-echo "=== Pipeline complete! ==="
+echo "=== Pipeline complete! All models trained. ==="
 

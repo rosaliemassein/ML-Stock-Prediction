@@ -21,4 +21,5 @@ dependencies = [
     "feedparser>=6.0.12",
     "huggingface-hub>=0.36.0",
     "sentence-transformers>=5.1.2",
+    "lightgbm>=4.6.0",
 ]
