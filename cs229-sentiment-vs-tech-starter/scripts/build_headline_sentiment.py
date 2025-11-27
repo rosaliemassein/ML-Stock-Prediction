@@ -2,10 +2,10 @@
 import argparse, os, sys, json
 import pandas as pd
 from pathlib import Path
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
 
 def finbert_pipeline():
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
     m = "ProsusAI/finbert"
     tok = AutoTokenizer.from_pretrained(m)
     mdl = AutoModelForSequenceClassification.from_pretrained(m, use_safetensors=True)

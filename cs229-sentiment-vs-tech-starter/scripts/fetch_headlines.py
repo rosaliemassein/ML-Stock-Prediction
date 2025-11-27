@@ -2,12 +2,16 @@
 # -*- coding: utf-8 -*-
 
 """
-Fetch headlines for a list of tickers using (1) yfinance, with (2) Google News RSS fallback.
+Fetch headlines for a list of tickers using:
+  (1) yfinance Ticker.news
+  (2) Yahoo Finance RSS per ticker
+  (3) Google News RSS with ticker + aliases
+
 Outputs a CSV with columns: date,ticker,text,source,url,published_at
 
 Usage (module):
   python -m scripts.fetch_headlines --config configs/default.yaml \
-    --start 2025-08-06 --end 2025-11-04 \
+    --start 2025-08-06 --end 2025-11- \
     --tickers AAPL,TSLA,MSFT,SPY,NVDA,GOOG,AMZN,META,NFLX,AMD \
     --out data/raw/news/headlines.csv
 """
@@ -21,22 +25,68 @@ import pandas as pd
 from src.utils.io import load_config, ensure_dir
 
 # --- Configs ---
-TZ_EXCHANGE = "US/Eastern"   # pour dater les news au jour de bourse local
+TZ_EXCHANGE = "US/Eastern"   # local exchange timezone for dating news
 REQ_COLS = ["date", "ticker", "text", "source", "url", "published_at"]
 
-# Aliases: on cherche aussi par nom complet / variantes
+# Minimum number of news items we try to get per ticker in [start, end]
+MIN_NEWS_PER_TICKER = 20
+
+# Aliases: also search by full names / variants in Google News
 ALIASES = {
-    "AAPL": ["Apple", "Apple Inc"],
-    "TSLA": ["Tesla", "Tesla Motors", "Elon Musk"],
-    "MSFT": ["Microsoft", "Microsoft Corporation", "Microsoft Corp"],
-    "SPY":  ["S&P 500", "SPDR"],
-    "NVDA": ["Nvidia", "NVIDIA", "NVIDIA Corp"],
-    "GOOG": ["Google", "Alphabet", "Alphabet Inc"],
-    "AMZN": ["Amazon", "Amazon.com"],
-    "META": ["Meta", "Meta Platforms", "Facebook"],
-    "NFLX": ["Netflix"],
-    "AMD":  ["AMD", "Advanced Micro Devices"]
+    # Big tech
+    "AAPL": ["Apple", "Apple Inc", "iPhone", "MacBook"],
+    "TSLA": ["Tesla", "Tesla Motors", "Elon Musk", "Cybertruck", "Model 3", "Model Y"],
+    "MSFT": ["Microsoft", "Microsoft Corporation", "Windows", "Azure"],
+    "GOOG": ["Google", "Alphabet", "Alphabet Inc", "YouTube"],
+    "GOOGL": ["Google", "Alphabet", "Alphabet Inc", "YouTube"],
+    "AMZN": ["Amazon", "Amazon.com", "AWS", "Prime Video"],
+    "META": ["Meta", "Meta Platforms", "Facebook", "Instagram", "WhatsApp", "Mark Zuckerberg"],
+    "NFLX": ["Netflix", "streaming platform"],
+    "NVDA": ["Nvidia", "NVIDIA", "NVIDIA Corp", "GPU"],
+    "AMD": ["AMD", "Advanced Micro Devices"],
+    "INTC": ["Intel", "Intel Corp"],
+    "QCOM": ["Qualcomm"],
+    "SHOP": ["Shopify"],
+    "CRM": ["Salesforce", "Salesforce.com"],
+    "ORCL": ["Oracle"],
+
+    # Banks & payments
+    "JPM": ["JPMorgan", "JPMorgan Chase"],
+    "BAC": ["Bank of America"],
+    "GS": ["Goldman Sachs"],
+    "MS": ["Morgan Stanley"],
+    "MA": ["Mastercard"],
+    "V": ["Visa"],
+
+    # Energy
+    "XOM": ["Exxon", "Exxon Mobil"],
+    "CVX": ["Chevron"],
+    "BP": ["BP plc"],
+
+    # Healthcare
+    "PFE": ["Pfizer"],
+    "MRK": ["Merck"],
+    "UNH": ["UnitedHealth", "UnitedHealth Group"],
+
+    # Consumer / industrial names
+    "DIS": ["Disney", "Walt Disney"],
+    "NKE": ["Nike"],
+    "BA": ["Boeing"],
+    "CAT": ["Caterpillar"],
+    "COST": ["Costco"],
+    "WMT": ["Walmart"],
+    "TGT": ["Target"],
+    "KO": ["Coca-Cola"],
+    "PEP": ["Pepsi", "PepsiCo"],
+    "IBM": ["IBM"],
+    "UPS": ["UPS", "United Parcel Service"],
+
+    # ETFs & indices (broad news)
+    "SPY": ["S&P 500", "SPDR S&P 500"],
+    "QQQ": ["Nasdaq 100", "Invesco QQQ"],
+    "DIA": ["Dow Jones", "Dow Jones Industrial Average"],
 }
+  
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -76,7 +126,7 @@ def _parse_publish_ts(item: Dict[str, Any]) -> Optional[pd.Timestamp]:
             except Exception:
                 continue
 
-    # yfinance v newer: sometimes under "content": {"pubDate": "..."}
+    # yfinance newer: sometimes under "content": {"pubDate": "..."}
     if "content" in item and isinstance(item["content"], dict):
         for k in ("pubDate", "publishedAt"):
             if k in item["content"] and item["content"][k]:
@@ -119,6 +169,7 @@ def _url_str(item: Dict[str, Any]) -> str:
 # --- Fetchers ----------------------------------------------------------------
 
 def fetch_yf_news_for_ticker(ticker: str) -> List[Dict[str, Any]]:
+    """Use yfinance Ticker.news."""
     import yfinance as yf  # local import to avoid hard dependency if unused
     try:
         news = yf.Ticker(ticker).news or []
@@ -129,17 +180,26 @@ def fetch_yf_news_for_ticker(ticker: str) -> List[Dict[str, Any]]:
     return news
 
 
-def fetch_google_rss(query: str) -> List[Dict[str, Any]]:
+def _ensure_feedparser():
     try:
-        import feedparser
-        from urllib.parse import quote
+        import feedparser  # noqa: F401
+        return True
     except Exception:
-        # Pas de feedparser -> pas de fallback, on retourne 0 item
-        print("[warn] feedparser non installé -> fallback Google News désactivé")
-        return []
+        print("[warn] feedparser not installed -> RSS fallbacks disabled")
+        return False
 
-    q = quote(query, safe='"')
-    url = f"https://news.google.com/rss/search?q={q}%20when:90d&hl=en-US&gl=US&ceid=US:en"
+
+def fetch_yahoo_rss(ticker: str) -> List[Dict[str, Any]]:
+    """
+    Yahoo Finance RSS per ticker.
+    Example URL:
+      https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL&region=US&lang=en-US
+    """
+    if not _ensure_feedparser():
+        return []
+    import feedparser
+
+    url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
     parsed = feedparser.parse(url)
 
     out = []
@@ -161,15 +221,58 @@ def fetch_google_rss(query: str) -> List[Dict[str, Any]]:
             "title": title,
             "link": link,
             "published_at": published.isoformat() if isinstance(published, pd.Timestamp) else None,
-            "provider": getattr(e, "source", {}).get("title", "") if hasattr(e, "source") else ""
+            "provider": "Yahoo Finance",
         })
     return out
 
 
+def fetch_google_rss(query: str) -> List[Dict[str, Any]]:
+    """
+    Google News RSS search.
+
+    NOTE: We removed the 'when:90d' restriction so that the feed can
+    return older articles; we then filter by [start, end] using timestamps.
+    """
+    if not _ensure_feedparser():
+        return []
+    import feedparser
+    from urllib.parse import quote
+
+    q = quote(query, safe='"')
+    # NO 'when:90d' here → let RSS return as much as possible, then filter
+    url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+    parsed = feedparser.parse(url)
+
+    out = []
+    for e in parsed.entries:
+        title = getattr(e, "title", "") or ""
+        link  = getattr(e, "link", "") or ""
+        published = None
+        if hasattr(e, "published"):
+            try:
+                published = pd.to_datetime(e.published, utc=True)
+            except Exception:
+                published = None
+        if published is None and hasattr(e, "updated"):
+            try:
+                published = pd.to_datetime(e.updated, utc=True)
+            except Exception:
+                published = None
+        out.append({
+            "title": title,
+            "link": link,
+            "published_at": published.isoformat() if isinstance(published, pd.Timestamp) else None,
+            "provider": getattr(e, "source", {}).get("title", "") if hasattr(e, "source") else "Google News",
+        })
+    return out
+
 
 # --- Normalization ------------------------------------------------------------
 
-def normalize_items(ticker: str, items: List[Dict[str, Any]], start: pd.Timestamp, end: pd.Timestamp) -> List[Dict[str, Any]]:
+def normalize_items(ticker: str,
+                    items: List[Dict[str, Any]],
+                    start: pd.Timestamp,
+                    end: pd.Timestamp) -> List[Dict[str, Any]]:
     """
     Normalize raw items (yf or RSS) into rows with REQ_COLS.
     Filter by [start, end] in UTC, then date in TZ_EXCHANGE.
@@ -178,7 +281,7 @@ def normalize_items(ticker: str, items: List[Dict[str, Any]], start: pd.Timestam
     for it in items:
         ts = _parse_publish_ts(it)
         if ts is None:
-            # try RSS ‘published_at’ if we set it explicitly
+            # try RSS 'published_at' if we set it explicitly
             if "published_at" in it and it["published_at"]:
                 try:
                     ts = pd.to_datetime(it["published_at"], utc=True)
@@ -215,7 +318,11 @@ def normalize_items(ticker: str, items: List[Dict[str, Any]], start: pd.Timestam
 
 # --- Main --------------------------------------------------------------------
 
-def main(cfg_path: str, out_path: str, start: Optional[str], end: Optional[str], tickers_csv: Optional[str]) -> None:
+def main(cfg_path: str,
+         out_path: str,
+         start: Optional[str],
+         end: Optional[str],
+         tickers_csv: Optional[str]) -> None:
     cfg = load_config(cfg_path)
 
     # Tickers: CLI override OR YAML
@@ -241,17 +348,24 @@ def main(cfg_path: str, out_path: str, start: Optional[str], end: Optional[str],
         kept_total += len(rows)
         all_rows.extend(rows)
 
-        # 2) If too few, try Google RSS with aliases
-        if kept_total < 5:
-            toks = [t] + ALIASES.get(t, [])
-            query = " OR ".join(toks)
-            rss_items = fetch_google_rss(query)
-            rows2 = normalize_items(t, rss_items, start_ts, end_ts)
+        # 2) Yahoo Finance RSS per ticker
+        if kept_total < MIN_NEWS_PER_TICKER:
+            rss_yahoo = fetch_yahoo_rss(t)
+            rows2 = normalize_items(t, rss_yahoo, start_ts, end_ts)
             kept_total += len(rows2)
             all_rows.extend(rows2)
 
-        print(f"[info] {t}: kept {kept_total}")
-        time.sleep(0.2)  # gentle
+        # 3) Google News RSS with aliases
+        if kept_total < MIN_NEWS_PER_TICKER:
+            toks = [t] + ALIASES.get(t, [])
+            query = " OR ".join(toks)
+            rss_google = fetch_google_rss(query)
+            rows3 = normalize_items(t, rss_google, start_ts, end_ts)
+            kept_total += len(rows3)
+            all_rows.extend(rows3)
+
+        print(f"[info] {t}: kept {kept_total} items in [{start_ts.date()} → {end_ts.date()}]")
+        time.sleep(0.2)  # be gentle
 
     # Build DataFrame with required columns even if no rows
     df = pd.DataFrame(all_rows, columns=REQ_COLS)
