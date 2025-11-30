@@ -428,8 +428,11 @@ def main():
     score = pd.read_csv("data/processed/sent_headlines_score.csv", parse_dates=["date"])
     triplet = pd.read_csv("data/processed/sent_headlines_triplet.csv", parse_dates=["date"])
     embed = pd.read_csv("data/processed/sent_headlines_embed_pca16.csv", parse_dates=["date"])
+    sentiment_llm = pd.read_csv("data/processed/sentiment_features.csv", parse_dates=["date"])
+    sentiment_llm_enhanced = pd.read_csv("data/processed/sentiment_llm_enhanced.csv", parse_dates=["date"])
     
-    for name, df_var in [("score", score), ("triplet", triplet), ("embed", embed)]:
+    for name, df_var in [("score", score), ("triplet", triplet), ("embed", embed), 
+                         ("sentiment_llm", sentiment_llm), ("sentiment_llm_enhanced", sentiment_llm_enhanced)]:
         dupes = df_var.groupby(['ticker','date']).size().max()
         if dupes > 1:
             print(f"[warn] {name}: Found {dupes} rows per ticker-date, aggregating...")
@@ -441,6 +444,10 @@ def main():
                 triplet = aggregated
             elif name == "embed":
                 embed = aggregated
+            elif name == "sentiment_llm":
+                sentiment_llm = aggregated
+            elif name == "sentiment_llm_enhanced":
+                sentiment_llm_enhanced = aggregated
 
     # Load enhanced sentiment features (140+ features)
     sent_enhanced = pd.read_csv("data/processed/sentiment_features_enhanced.csv", parse_dates=["date"])
@@ -479,6 +486,8 @@ def main():
     score = score[score['date'].isin(sentiment_dates)]
     triplet = triplet[triplet['date'].isin(sentiment_dates)]
     embed = embed[embed['date'].isin(sentiment_dates)]
+    sentiment_llm = sentiment_llm[sentiment_llm['date'].isin(sentiment_dates)]
+    sentiment_llm_enhanced = sentiment_llm_enhanced[sentiment_llm_enhanced['date'].isin(sentiment_dates)]
 
     # REDUCED technical features - minimal set to avoid overfitting with limited data
     # Using only the most important, non-redundant indicators
@@ -626,6 +635,19 @@ def main():
     else:
         print(f"[warn] 'news_count' column not found, skipping interaction features")
     
+    # Handle NaN values in sentiment_llm by filling and creating combined features
+    sentiment_llm['sentiment_raw_weight'] = sentiment_llm['sentiment_raw_weight'].fillna(0)
+    sentiment_llm['sentiment_weighted_sum'] = sentiment_llm['sentiment_weighted_sum'].fillna(0)
+    sentiment_llm['sentiment_combined'] = sentiment_llm['sentiment_raw_weight'] + sentiment_llm['sentiment_weighted_sum']
+    
+    # Get sentiment LLM feature columns
+    sentiment_llm_cols = [c for c in sentiment_llm.columns if c not in ['date', 'ticker']]
+    print(f"[info] LLM sentiment features: {sentiment_llm_cols}")
+    
+    # Get enhanced LLM sentiment feature columns
+    sentiment_llm_enhanced_cols = [c for c in sentiment_llm_enhanced.columns if c not in ['date', 'ticker']]
+    print(f"[info] Enhanced LLM sentiment features: {len(sentiment_llm_enhanced_cols)} features")
+    
     model_configs = [
         ("Technical only", tech, tech_features),
         
@@ -637,6 +659,14 @@ def main():
          tech.merge(triplet, on=["ticker","date"], how="inner"), 
          dedupe_features(tech_features+["p_pos","p_neu","p_neg"])),
         
+        ("Technical + LLM Sentiment", 
+         tech.merge(sentiment_llm, on=["ticker","date"], how="inner"),
+         dedupe_features(tech_features+sentiment_llm_cols)),
+        
+        ("Technical + LLM Enhanced", 
+         tech.merge(sentiment_llm_enhanced, on=["ticker","date"], how="inner"),
+         dedupe_features(tech_features+sentiment_llm_enhanced_cols)),
+        
         ("Technical + Enhanced Sentiment (ALL)", 
          tech.merge(sent_enhanced, on=["ticker","date"], how="inner"),
          dedupe_features(tech_features+enhanced_sent_cols)),
@@ -646,7 +676,9 @@ def main():
     print(f"       1. Technical only (baseline)")
     print(f"       2. Technical + Score (simple sentiment)")
     print(f"       3. Technical + Triplet (FinBERT probabilities)")
-    print(f"       4. Technical + Enhanced Sentiment ALL ({len(enhanced_sent_cols)} features)")
+    print(f"       4. Technical + LLM Sentiment ({len(sentiment_llm_cols)} features)")
+    print(f"       5. Technical + LLM Enhanced ({len(sentiment_llm_enhanced_cols)} features)")
+    print(f"       6. Technical + Enhanced Sentiment ALL ({len(enhanced_sent_cols)} features)")
     
     # Run models based on selection
     for i, (model_name, df_model, features) in enumerate(model_configs, 1):
